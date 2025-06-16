@@ -14,73 +14,89 @@ features = ['Page_total_likes', 'Post_Hour', 'Lifetime_Post_Total_Reach',
             'engagement_rate', 'interactions_per_hour']
 
 targets = ['like', 'share', 'Total_Interactions']
-log_targets = True  # Set to True if your model was trained with log-transformed targets
+log_targets = True
 
-# Streamlit App UI
-st.title("📘 Facebook Post Interaction Predictor")
-st.markdown("""
-This app uses a machine learning model trained on Facebook post metrics to predict the number of:
+# Setup tabs
+tab1, tab2 = st.tabs(["📘 Prediction", "📊 EDA"])
 
-- 👍 Likes
-- 🔄 Shares
-- 💬 Total Interactions (including likes, shares, comments, etc.)
+# -------------------- 📘 Prediction Tab --------------------
+with tab1:
+    st.title("📘 Facebook Post Interaction Predictor")
+    st.markdown("""
+    This app predicts the number of:
+    - 👍 Likes
+    - 🔄 Shares
+    - 💬 Total Interactions
+    based on your post metrics. The model is a **Random Forest Regressor** using **multi-output regression** with feature engineering and log-transformations.
+    """)
 
-The model is based on a **Random Forest Regressor** trained using **multi-output regression** on historical post data. It also includes:
-- Feature engineering (like engagement rate & interactions per hour)
-- Log-transformation and scaling for better performance
-- Inverse transformation after prediction to return real values
+    st.sidebar.header("📥 Enter Post Metrics")
 
-📌 Adjust the inputs from the sidebar to see predicted engagement for a Facebook post.
-""")
+    # Input fields
+    page_likes = st.sidebar.number_input("Page Total Likes", value=30000)
+    post_hour = st.sidebar.slider("Post Hour (0–23)", 0, 23, value=14)
+    reach = st.sidebar.number_input("Lifetime Post Total Reach", value=18000)
+    impressions = st.sidebar.number_input("Lifetime Post Total Impressions", value=20000)
+    engaged_users = st.sidebar.number_input("Lifetime Engaged Users", value=1200)
+    page_likers_engaged = st.sidebar.number_input("People Who Liked Page & Engaged", value=900)
 
-st.sidebar.header("📥 Enter Post Metrics")
+    # Derived features
+    total_interactions_est = 1500
+    engagement_rate = st.sidebar.number_input("Engagement Rate", value=total_interactions_est / impressions)
+    interactions_per_hour = st.sidebar.number_input("Interactions Per Hour", value=total_interactions_est / post_hour)
 
-# Input fields
-page_likes = st.sidebar.number_input("Page Total Likes", value=30000)
-post_hour = st.sidebar.slider("Post Hour (0–23)", 0, 23, value=14)
-reach = st.sidebar.number_input("Lifetime Post Total Reach", value=18000)
-impressions = st.sidebar.number_input("Lifetime Post Total Impressions", value=20000)
-engaged_users = st.sidebar.number_input("Lifetime Engaged Users", value=1200)
-page_likers_engaged = st.sidebar.number_input(
-    "People Who Liked Page & Engaged", value=900)
+    # Prediction button
+    if st.button("🔍 Predict Interactions"):
+        input_df = pd.DataFrame([{
+            'Page_total_likes': page_likes,
+            'Post_Hour': post_hour,
+            'Lifetime_Post_Total_Reach': reach,
+            'Lifetime_Post_Total_Impressions': impressions,
+            'Lifetime_Engaged_Users': engaged_users,
+            'Lifetime_People_who_have_liked_your_Page_and_engaged_with_your_post': page_likers_engaged,
+            'engagement_rate': engagement_rate,
+            'interactions_per_hour': interactions_per_hour
+        }])
 
-# Derived features
-total_interactions_est = 1500  # default estimate for computing derived metrics
-engagement_rate = st.sidebar.number_input("Engagement Rate", value=total_interactions_est / impressions)
-interactions_per_hour = st.sidebar.number_input("Interactions Per Hour", value=total_interactions_est / post_hour)
+        # Log transform and scale
+        input_df_log = input_df.copy()
+        for col in features:
+            input_df_log[col] = np.log1p(input_df_log[col])
+        input_scaled = scaler.transform(input_df_log)
 
-# Predict button
-if st.button("🔍 Predict Interactions"):
-    # Assemble input into DataFrame
-    input_df = pd.DataFrame([{
-        'Page_total_likes': page_likes,
-        'Post_Hour': post_hour,
-        'Lifetime_Post_Total_Reach': reach,
-        'Lifetime_Post_Total_Impressions': impressions,
-        'Lifetime_Engaged_Users': engaged_users,
-        'Lifetime_People_who_have_liked_your_Page_and_engaged_with_your_post': page_likers_engaged,
-        'engagement_rate': engagement_rate,
-        'interactions_per_hour': interactions_per_hour
-    }])
+        # Prediction
+        pred_log = model.predict(input_scaled)
+        prediction = np.expm1(pred_log) if log_targets else pred_log
 
-    # Apply log1p transformation
-    input_df_log = input_df.copy()
-    for col in features:
-        input_df_log[col] = np.log1p(input_df_log[col])
+        # Results
+        st.subheader("📈 Predicted Results")
+        for i, col in enumerate(targets):
+            st.metric(label=f"{col.title()}", value=f"{prediction[0][i]:.2f}")
 
-    # Apply scaling
-    input_scaled = scaler.transform(input_df_log)
+# -------------------- 📊 EDA Tab --------------------
+with tab2:
+    st.title("📊 Exploratory Data Analysis (EDA)")
+    st.markdown("Click the buttons below to view pre-generated visualizations.")
 
-    # Make prediction
-    pred_log = model.predict(input_scaled)
+    # Replace these URLs with actual Hugging Face URLs
+    box_plot_url = "shares.png"
+    pair_plot_url = "like_share_interactions.png"
+    dist_plot_url = "interactions.png"
 
-    # Inverse log1p if needed
-    if log_targets:
-        prediction = np.expm1(pred_log)
-    else:
-        prediction = pred_log
+    # Display buttons and graphs
+    col1, col2, col3 = st.columns(3)
 
-    # Display predictions
-    st.subheader("📈 Predicted Results")
-    for i, col in enumerate(targets):
-        st.metric(label=f"{col.title()}", value=f"{prediction[0][i]:.2f}")
+    with col1:
+        if st.button("📦 Box Plots"):
+            st.subheader("Box Plots")
+            st.image(box_plot_url, use_column_width=True)
+
+    with col2:
+        if st.button("🔗 Pair Plots"):
+            st.subheader("Pair Plot of Target Columns")
+            st.image(pair_plot_url, use_column_width=True)
+
+    with col3:
+        if st.button("📊 Distribution"):
+            st.subheader("Distribution of Total Interactions")
+            st.image(dist_plot_url, use_column_width=True)
